@@ -425,24 +425,56 @@ fi
     return True
 
 
-def create_vscode_settings(config):
-    """Create a VS Code settings file for the workspace."""
-    print("\n📝 Creating VS Code settings template...")
+def create_vscode_settings_remote(ssh_host_name, config):
+    """Create VS Code settings file directly in the remote workspace."""
+    print("\n📝 Configuring VS Code settings on remote...")
     
-    vscode_dir = Path(".vscode")
-    vscode_dir.mkdir(exist_ok=True)
+    # Infer workspace directory from requirements_file path
+    requirements_path = config.get("requirements_file", "")
+    if requirements_path and requirements_path.startswith("/workspace/"):
+        # Extract workspace dir (e.g., /workspace/my-project from /workspace/my-project/requirements.txt)
+        workspace_dir = "/".join(requirements_path.split("/")[:-1])
+    else:
+        # Default to /workspace
+        workspace_dir = "/workspace"
+        print(f"   ⚠️  Could not infer workspace from requirements_file, using {workspace_dir}")
     
     settings = {
         "python.defaultInterpreterPath": f"{config['venv_path']}/bin/python",
         "python.terminal.activateEnvironment": True,
     }
     
-    settings_file = vscode_dir / "settings.json.template"
-    with open(settings_file, "w") as f:
-        json.dump(settings, f, indent=2)
+    settings_json = json.dumps(settings, indent=2)
     
-    print(f"✅ Created: {settings_file}")
-    print("   Copy this to your remote workspace's .vscode/settings.json")
+    # Create .vscode directory and settings.json on remote
+    create_cmd = f"""
+mkdir -p {workspace_dir}/.vscode
+cat > {workspace_dir}/.vscode/settings.json << 'EOF'
+{settings_json}
+EOF
+echo "Settings created in {workspace_dir}/.vscode/settings.json"
+"""
+    
+    try:
+        result = subprocess.run(
+            ["ssh", ssh_host_name, create_cmd],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            print(f"✅ Created settings in {workspace_dir}/.vscode/settings.json")
+            print(f"   Python interpreter will auto-select: {config['venv_path']}/bin/python")
+            return True
+        else:
+            print("   ⚠️  Could not create remote settings file")
+            if result.stderr:
+                print(f"      {result.stderr[:100]}")
+            return False
+    except Exception as e:
+        print(f"   ⚠️  Error creating remote settings: {e}")
+        return False
 
 
 def main():
@@ -508,9 +540,9 @@ def main():
                 install_vscode_extensions(ssh_host_name, extensions)
             else:
                 print("\n⏭️  No VS Code extensions specified, skipping installation")
-        
-        # Phase 7: Create VS Code settings template
-        create_vscode_settings(config)
+            
+            # Phase 7: Create VS Code settings on remote
+            create_vscode_settings_remote(ssh_host_name, config)
         
         print("\n" + "=" * 50)
         print("🎉 Setup complete! Your RunPod is ready to use!")
@@ -525,13 +557,17 @@ def main():
             print(f"   • Python environment: {config['venv_path']}")
             print("   • Dependencies installed from requirements.txt")
             print("   • VS Code extensions installed")
+            print("   • Python interpreter configured")
             print("\n🚀 Your Cursor/VS Code window should be ready to code!")
+            print("   The Python interpreter should auto-select when you open the workspace.")
         else:
             print("\n✅ Environment configured:")
             print(f"   • SSH access: ssh {ssh_host_name}")
             print(f"   • Python environment: {config['venv_path']}")
             print("   • Dependencies installed from requirements.txt")
-            print("\n💡 Next: Install extensions via Extensions panel in Cursor")
+            print("   • Python interpreter configured")
+            print("\n💡 Next: Install Python extension via Extensions panel in Cursor")
+            print("   Then the interpreter should auto-select!")
         
         print(f"\n📦 Pod ID: {pod_id}")
         print(f"💰 Remember to terminate when done: python manage_pods.py terminate {pod_id}")
