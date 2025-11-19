@@ -489,7 +489,15 @@ def main():
                 print(f"   • Select: {ssh_host_name}")
                 print(f"\n   OR run: cursor --remote ssh-remote+{ssh_host_name} /workspace")
                 print("\n" + "=" * 70)
-                print("⏳ Continuing with environment setup in the background...\n")
+                
+                # Wait for user acknowledgment
+                try:
+                    input("\n⏸️  Press ENTER to continue (after you've started connecting)... ")
+                except KeyboardInterrupt:
+                    print("\n\n⚠️  Interrupted by user")
+                    sys.exit(1)
+                
+                print("\n⏳ Continuing with environment setup...\n")
             
             # Phase 5: Setup remote environment (pip install happens here)
             setup_remote_environment(ssh_host_name, config)
